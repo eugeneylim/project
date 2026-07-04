@@ -23,12 +23,17 @@ bar chart.
 """
 
 import argparse
+import os
 
 import ffn
+import matplotlib
+matplotlib.use("Agg")  # headless: this environment's Qt/X11 GUI backend crashes on load, so render straight to file
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yfinance as yf
+
+CHARTS_DIR = "charts"
 
 COUNTRY_ETFS = {
     "SPY": "United States",
@@ -180,6 +185,64 @@ def plot_weights_history(weights_df, title, show=True):
     return fig
 
 
+def drawdown_series(equity):
+    return equity / equity.cummax() - 1.0
+
+
+def plot_drawdown(combined, best_name, show=True):
+    dd_strategy = drawdown_series(combined[best_name]) * 100
+    dd_bench = drawdown_series(combined[BENCHMARK_SYMBOL]) * 100
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.fill_between(dd_strategy.index, dd_strategy.values, 0, color="tab:purple", alpha=0.3)
+    ax.plot(dd_strategy.index, dd_strategy.values, color="tab:purple", label=best_name)
+    ax.fill_between(dd_bench.index, dd_bench.values, 0, color="tab:gray", alpha=0.3)
+    ax.plot(dd_bench.index, dd_bench.values, color="tab:gray", label=f"{BENCHMARK_SYMBOL} Buy & Hold")
+    ax.set_title(f"Drawdown — {best_name} vs. {BENCHMARK_SYMBOL}")
+    ax.set_ylabel("Drawdown (%)")
+    ax.set_xlabel("Date")
+    ax.legend(loc="lower left")
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_returns_heatmap(total_returns, show=True):
+    strategy_names = list(STRATEGY_LEGS.keys())
+    grid = np.array(
+        [[total_returns[f"{name} ({lb}mo)"] * 100 for lb in MOMENTUM_LOOKBACKS_MONTHS] for name in strategy_names]
+    )
+    vmax = np.abs(grid).max()
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    im = ax.imshow(grid, cmap="RdYlGn", vmin=-vmax, vmax=vmax, aspect="auto")
+    ax.set_xticks(range(len(MOMENTUM_LOOKBACKS_MONTHS)), [f"{lb}mo" for lb in MOMENTUM_LOOKBACKS_MONTHS])
+    ax.set_yticks(range(len(strategy_names)), strategy_names)
+    for i in range(len(strategy_names)):
+        for j in range(len(MOMENTUM_LOOKBACKS_MONTHS)):
+            ax.text(j, i, f"{grid[i, j]:+.1f}%", ha="center", va="center", fontsize=9)
+    ax.set_title("Total Return by Strategy Type × Momentum Lookback")
+    fig.colorbar(im, ax=ax, label="Total Return (%)")
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_correlation_heatmap(corr, show=True):
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(corr.values, cmap="RdBu_r", vmin=-1, vmax=1)
+    ax.set_xticks(range(len(corr.columns)), corr.columns, rotation=90, fontsize=7)
+    ax.set_yticks(range(len(corr.index)), corr.index, fontsize=7)
+    ax.set_title("Pairwise Daily-Return Correlation")
+    fig.colorbar(im, ax=ax, label="Correlation")
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig
+
+
 def run(plot=True):
     all_symbols = sorted(set(COUNTRY_ETFS) | set(SECTOR_ETFS))
     prices = fetch_prices(all_symbols)
@@ -215,14 +278,31 @@ def run(plot=True):
     print(f"\nBest performing variant by total return: {best_name} ({total_returns[best_name]*100:+.2f}%)")
 
     if plot:
-        stats.plot(figsize=(10, 5))
-        plt.title("Global Rotation Variants vs. SPY Buy & Hold")
-        plt.tight_layout()
-        plt.show()
+        os.makedirs(CHARTS_DIR, exist_ok=True)
+
+        ax = stats.plot(figsize=(10, 5))
+        ax.set_title("Global Rotation Variants vs. SPY Buy & Hold")
+        equity_fig = ax.get_figure()
+        equity_fig.tight_layout()
 
         best_legs, _ = VARIANTS[best_name]
         weights_df = weights_history_frame(holdings_by_variant[best_name], best_legs)
-        plot_weights_history(weights_df, f"{best_name} — Weight History (Best Performer)")
+        weights_fig = plot_weights_history(weights_df, f"{best_name} — Weight History (Best Performer)", show=False)
+
+        heatmap_fig = plot_returns_heatmap(total_returns, show=False)
+        drawdown_fig = plot_drawdown(combined, best_name, show=False)
+        corr_fig = plot_correlation_heatmap(combined.pct_change().dropna().corr(), show=False)
+
+        figures = {
+            "equity_curves.png": equity_fig,
+            "weights_history.png": weights_fig,
+            "returns_heatmap.png": heatmap_fig,
+            "drawdown.png": drawdown_fig,
+            "correlation_heatmap.png": corr_fig,
+        }
+        for filename, fig in figures.items():
+            fig.savefig(os.path.join(CHARTS_DIR, filename), dpi=150)
+        print(f"Saved {len(figures)} charts to {os.path.abspath(CHARTS_DIR)}/")
 
 
 def parse_args():

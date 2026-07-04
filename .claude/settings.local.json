@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git pull *)",
+      "Bash(ls -la /mnt/c/Users/ppp94/project/.vscode 2>&1; echo \"---\"; which python3 python 2>&1; echo \"---venv---\"; find /mnt/c/Users/ppp94/project -maxdepth 2 -iname \"*venv*\" 2>&1; echo \"---code---\"; which code 2>&1; echo \"---ext---\"; ls ~/.vscode-server/extensions 2>/dev/null | grep -i python)",
+      "Read(//home/ppp94/.vscode-server/extensions/**)",
+      "Bash(ls requirements*.txt Pipfile pyproject.toml 2>&1; cat /home/ppp94/.venv/pyvenv.cfg 2>&1)",
+      "Read(//home/ppp94/.venv/**)",
+      "Skill(dataviz)",
+      "Skill(dataviz:*)",
+      "Bash(pkill -9 -f \"matplotlib\")"
+    ]
+  }
+}
